@@ -3,7 +3,11 @@ package jp.komame.stopwatchgame
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
-
+import jp.komame.stopwatchgame.PlayerScore
+import jp.komame.stopwatchgame.TitleScreen
+import jp.komame.stopwatchgame.SetupScreen
+import jp.komame.stopwatchgame.GameScreen
+import jp.komame.stopwatchgame.ResultScreen
 
 // --- 1. タイトル画面 (StartScreen) ---
 @Preview(showSystemUi = true, device = Devices.PIXEL_7, name = "1_Start_Phone")
@@ -40,7 +44,7 @@ fun PreviewGameScreen() {
     GameScreen(
         name = "プレイヤー 1",
         target = 12.0,
-        hint = false,   // ヒント（秒数）が出ている状態
+        hintDuration = 5f,   // ヒント（秒数）が出ている状態
         onStop = {}
     )
 }
@@ -82,8 +86,8 @@ fun PreviewSaveConfigScreen() {
         onRandomRangeChange = {},
         manualTargetTime = 10f,
         onManualTargetTimeChange = {},
-        showHint = true, // チェックボックスON
-        onShowHintChange = {},
+        hintDuration = 5f, // チェックボックスON
+        onHintDurationChange = {},
         onBack = {},
         onStartGame = {}
     )

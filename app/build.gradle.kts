@@ -57,4 +57,5 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.play.services.ads)
+    implementation("androidx.compose.material:material-icons-extended")
 }

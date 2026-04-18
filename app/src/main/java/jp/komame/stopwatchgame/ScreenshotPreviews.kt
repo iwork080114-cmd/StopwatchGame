@@ -44,7 +44,7 @@ fun PreviewGameScreen() {
     GameScreen(
         name = "プレイヤー 1",
         target = 12.0,
-        hint = false,   // ヒント（秒数）が出ている状態
+        hintDuration = 5f,   // ヒント（秒数）が出ている状態
         onStop = {}
     )
 }
@@ -86,8 +86,8 @@ fun PreviewSaveConfigScreen() {
         onRandomRangeChange = {},
         manualTargetTime = 10f,
         onManualTargetTimeChange = {},
-        showHint = true, // チェックボックスON
-        onShowHintChange = {},
+        hintDuration = 5f, // チェックボックスON
+        onHintDurationChange = {},
         onBack = {},
         onStartGame = {}
     )

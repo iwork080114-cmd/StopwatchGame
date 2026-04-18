@@ -57,8 +57,22 @@ class MainActivity : ComponentActivity() {
         loadRewardedAd()
 
         setContent {
-            MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            // 1. システムがダークモード設定かどうかを取得
+            val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
+
+            // 2. ダーク用とライト用のカラーセットを定義
+            val colorScheme = if (darkTheme) {
+                darkColorScheme() // ダークモードの色（自動生成）
+            } else {
+                lightColorScheme() // ライトモードの色（自動生成）
+            }
+
+            // 3. 定義した colorScheme を適用
+            MaterialTheme(colorScheme = colorScheme) {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
                     MainApp(showRewardedAd = { onAdWatched -> showRewardedAdLogic(onAdWatched) })
                 }
             }
@@ -133,7 +147,8 @@ fun MainApp(showRewardedAd: (() -> Unit) -> Unit) {
     var selectedResultTab by remember { mutableIntStateOf(0) }
 
     Scaffold(
-        bottomBar = { AdmobBanner(Modifier.background(MaterialTheme.colorScheme.surfaceVariant).padding(top = 2.dp)) }
+        bottomBar = { AdmobBanner(Modifier.background(MaterialTheme.colorScheme.surfaceVariant).padding(top = 2.dp)) },
+        containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             when (currentScreen) {

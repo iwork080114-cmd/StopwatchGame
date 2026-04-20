@@ -3,92 +3,86 @@ package jp.komame.stopwatchgame
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview
-import jp.komame.stopwatchgame.PlayerScore
-import jp.komame.stopwatchgame.TitleScreen
-import jp.komame.stopwatchgame.SetupScreen
-import jp.komame.stopwatchgame.GameScreen
-import jp.komame.stopwatchgame.ResultScreen
 
-// --- 1. タイトル画面 (StartScreen) ---
-@Preview(showSystemUi = true, device = Devices.PIXEL_7, name = "1_Start_Phone")
-@Preview(showSystemUi = true, device = Devices.NEXUS_7, name = "1_Start_Tablet_7")
-@Preview(showSystemUi = true, device = Devices.NEXUS_10, name = "1_Start_Tablet_10")
+@Preview(showSystemUi = true, device = Devices.PIXEL_7, name = "1_タイトル画面")
 @Composable
 fun PreviewTitleScreen() {
     TitleScreen(onStart = {})
 }
 
-// --- 2. セットアップ画面 (SetupScreen) ---
-// 人数が多く、広告解放済みの「見栄えが良い」状態をプレビュー
-@Preview(showSystemUi = true, device = Devices.PIXEL_7, name = "2_Setup_Phone")
-@Preview(showSystemUi = true, device = Devices.NEXUS_7, name = "2_Setup_Tablet_7")
-@Preview(showSystemUi = true, device = Devices.NEXUS_10, name = "2_Setup_Tablet_10")
+@Preview(showSystemUi = true, device = Devices.PIXEL_7, name = "2_人数選択画面")
 @Composable
 fun PreviewSetupScreen() {
     SetupScreen(
-        playerCount = 10f,        // 10人設定を表示
-        isLimitReleased = true,   // 広告解放済みの状態
-        onPlayerCountChange = {},
-        onReleaseLimit = {},
-        onGoToSave = {}
+        count = 3,
+        isReleased = true,
+        onCountChange = {},
+        onRelease = {},
+        onNext = {}
     )
 }
 
-// --- 3. ゲーム中画面 (GameScreen) ---
-// 計測中の緊張感が伝わる画面
-@Preview(showSystemUi = true, device = Devices.PIXEL_7, name = "3_Game_Phone")
-@Preview(showSystemUi = true, device = Devices.NEXUS_7, name = "3_Game_Tablet_7")
-@Preview(showSystemUi = true, device = Devices.NEXUS_10, name = "3_Game_Tablet_10")
+@Preview(showSystemUi = true, device = Devices.PIXEL_7, name = "3_詳細設定画面")
+@Composable
+fun PreviewSaveConfigScreen() {
+    SaveConfigScreen(
+        names = listOf("プレイヤー 1", "プレイヤー 2", "プレイヤー 3"),
+        onNameChange = { _, _ -> },
+        isRnd = true,
+        onRndChange = {},
+        isIndiv = true,
+        onIndivChange = {},
+        minT = 10,
+        onMinChange = {},
+        maxT = 30,
+        onMaxChange = {},
+        manualT = 10,
+        onManualChange = {},
+        hintT = 5,
+        onHintChange = {},
+        onBack = {},
+        onStart = {}
+    )
+}
+
+@Preview(showSystemUi = true, device = Devices.PIXEL_7, name = "4_準備画面")
+@Composable
+fun PreviewReadyScreen() {
+    ReadyScreen(name = "プレイヤー 1", target = 10.0, onStart = {})
+}
+
+@Preview(showSystemUi = true, device = Devices.PIXEL_7, name = "5_計測画面")
 @Composable
 fun PreviewGameScreen() {
     GameScreen(
         name = "プレイヤー 1",
-        target = 12.0,
-        hintDuration = 5f,   // ヒント（秒数）が出ている状態
+        target = 10.0,
+        hintT = 5f,
         onStop = {}
     )
 }
 
-// --- 4. 結果画面 (ResultScreen) ---
-// 1位の「優勝」タブを表示して華やかに
-@Preview(showSystemUi = true, device = Devices.PIXEL_7, name = "4_Result_Phone")
-@Preview(showSystemUi = true, device = Devices.NEXUS_7, name = "4_Result_Tablet_7")
-@Preview(showSystemUi = true, device = Devices.NEXUS_10, name = "4_Result_Tablet_10")
+@Preview(showSystemUi = true, device = Devices.PIXEL_7, name = "6_集計中画面")
 @Composable
-fun PreviewResultScreen() {
-    val mockScores = listOf(
-        PlayerScore("こまめ", 10.0, 10.02),
-        PlayerScore("ゲストA", 10.0, 11.50),
-        PlayerScore("ゲストB", 10.0, 8.20)
-    )
-    ResultScreen(
-        scores = mockScores,
-        initialTab = 0, // 「🏆 1位」タブを選択状態にする
-        onRestart = {}
-    )
+fun PreviewCalculatingScreen() {
+    CalculatingScreen(onFinished = {})
 }
 
-// --- 「ルール設定画面」を直接表示するプレビュー ---
-@Preview(showSystemUi = true, device = Devices.PIXEL_7, name = "SaveConfig_Phone")
-@Preview(showSystemUi = true, device = Devices.NEXUS_7, name = "SaveConfig_Tablet_7")
-@Preview(showSystemUi = true, device = Devices.NEXUS_10, name = "SaveConfig_Tablet_10")
+@Preview(showSystemUi = true, device = Devices.PIXEL_7, name = "7_結果メニュー画面")
 @Composable
-fun PreviewSaveConfigScreen() {
-    // 画像の状態を再現するためのダミーデータ
-    SaveConfigScreen(
-        playerNames = listOf("プレイヤー 1", "プレイヤー 2", "プレイヤー 3"),
-        onNameChange = { _, _ -> },
-        isRandomTime = true, // ランダムスイッチON
-        onRandomTimeChange = {},
-        isIndividualRandom = true, // 「バラバラ」を選択
-        onIndividualRandomChange = {},
-        randomRange = 20f..30f, // 範囲を20-30に設定
-        onRandomRangeChange = {},
-        manualTargetTime = 10f,
-        onManualTargetTimeChange = {},
-        hintDuration = 5f, // チェックボックスON
-        onHintDurationChange = {},
-        onBack = {},
-        onStartGame = {}
+fun PreviewResultMenuScreen() {
+    ResultMenuScreen(onSelect = {})
+}
+
+@Preview(showSystemUi = true, device = Devices.PIXEL_7, name = "8_結果詳細画面")
+@Composable
+fun PreviewResultScreen() {
+    ResultScreen(
+        scores = listOf(
+            PlayerScore("プレイヤー 1", 10.0, 10.02),
+            PlayerScore("プレイヤー 2", 10.0, 11.50)
+        ),
+        initialTab = 0,
+        onRestart = {}
     )
 }

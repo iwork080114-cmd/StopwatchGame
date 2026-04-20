@@ -1,21 +1,19 @@
 package jp.komame.stopwatchgame
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,6 +25,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -38,41 +37,32 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
-import kotlin.math.round
 
-
-// --- データモデル ---
+// ==========================================
+// データモデル
+// ==========================================
 data class PlayerScore(val name: String, val targetTime: Double, val actualTime: Double) {
     val diff: Double get() = abs(targetTime - actualTime)
 }
-
-data class GameHistory(val date: String, val results: List<Pair<String, Double>>)
+data class GameHistory(val date: String, val results: List<HistoryDetail>)
+data class HistoryDetail(val name: String, val target: Double, val actual: Double, val diff: Double)
 
 class MainActivity : ComponentActivity() {
     private var rewardedAd: RewardedAd? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 【修正】画面を縦向きに固定
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+
         MobileAds.initialize(this) {}
         loadRewardedAd()
 
         setContent {
-            // 1. システムがダークモード設定かどうかを取得
             val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
-
-            // 2. ダーク用とライト用のカラーセットを定義
-            val colorScheme = if (darkTheme) {
-                darkColorScheme() // ダークモードの色（自動生成）
-            } else {
-                lightColorScheme() // ライトモードの色（自動生成）
-            }
-
-            // 3. 定義した colorScheme を適用
-            MaterialTheme(colorScheme = colorScheme) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
+            MaterialTheme(colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()) {
+                Surface(modifier = Modifier.fillMaxSize()) {
                     MainApp(showRewardedAd = { onAdWatched -> showRewardedAdLogic(onAdWatched) })
                 }
             }
@@ -88,106 +78,102 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showRewardedAdLogic(onAdWatched: () -> Unit) {
-        rewardedAd?.let { ad ->
-            ad.show(this) { onAdWatched(); loadRewardedAd() }
-        } ?: run {
+        rewardedAd?.let { ad -> ad.show(this) { onAdWatched(); loadRewardedAd() } } ?: run {
             Toast.makeText(this, "広告準備中...", Toast.LENGTH_SHORT).show()
             loadRewardedAd()
         }
     }
 }
 
-// --- 履歴管理ロジック ---
+// ==========================================
+// 履歴保存
+// ==========================================
 fun saveHistory(context: Context, sortedScores: List<PlayerScore>) {
     val prefs = context.getSharedPreferences("game_prefs", Context.MODE_PRIVATE)
-    // 確実に新しい形式で保存するためキーを変更
-    val historyList = prefs.getStringSet("history_data_v2", emptySet())?.toMutableList() ?: mutableListOf()
+    val historyList = prefs.getStringSet("history_v6", emptySet())?.toMutableList() ?: mutableListOf()
     val sdf = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
-
-    val resultsStr = sortedScores.joinToString(",") { "${it.name}:${"%.2f".format(it.diff)}" }
+    val resultsStr = sortedScores.joinToString(",") { "${it.name}:${"%.1f".format(it.targetTime)}:${"%.2f".format(it.actualTime)}:${"%.2f".format(it.diff)}" }
     val newData = "${sdf.format(Date())};$resultsStr"
-
     historyList.add(0, newData)
-    prefs.edit().putStringSet("history_data_v2", historyList.take(5).toSet()).apply()
+    prefs.edit().putStringSet("history_v6", historyList.take(5).toSet()).apply()
 }
 
 fun getHistory(context: Context): List<GameHistory> {
     val prefs = context.getSharedPreferences("game_prefs", Context.MODE_PRIVATE)
-    val historySet = prefs.getStringSet("history_data_v2", emptySet()) ?: emptySet()
-    return historySet.mapNotNull { entry ->
+    return (prefs.getStringSet("history_v6", emptySet()) ?: emptySet()).mapNotNull { entry ->
         val mainParts = entry.split(";")
         if (mainParts.size == 2) {
-            val date = mainParts[0]
             val results = mainParts[1].split(",").mapNotNull { res ->
-                val pair = res.split(":")
-                if (pair.size == 2) pair[0] to (pair[1].toDoubleOrNull() ?: 0.0) else null
+                val p = res.split(":")
+                if (p.size == 4) HistoryDetail(p[0], p[1].toDoubleOrNull() ?: 0.0, p[2].toDoubleOrNull() ?: 0.0, p[3].toDoubleOrNull() ?: 0.0) else null
             }
-            GameHistory(date, results)
+            GameHistory(mainParts[0], results)
         } else null
     }.sortedByDescending { it.date }
 }
 
+// ==========================================
+// アプリ本体
+// ==========================================
 @Composable
 fun MainApp(showRewardedAd: (() -> Unit) -> Unit) {
     val context = LocalContext.current
     var currentScreen by remember { mutableStateOf("title") }
     var isLimitReleased by remember { mutableStateOf(false) }
 
-    var playerCount by remember { mutableFloatStateOf(3f) }
-    var playerNames by remember { mutableStateOf(List(3) { "プレイヤー ${it + 1}" }) }
-    var isRandomTime by remember { mutableStateOf(false) }
-    var isIndividualRandom by remember { mutableStateOf(false) }
-    var randomRange by remember { mutableStateOf(10f..30f) }
-    var manualTargetTime by remember { mutableFloatStateOf(10f) }
-    var hintDuration by remember { mutableFloatStateOf(5f) }
+    var playerCount by remember { mutableIntStateOf(3) }
+    var playerNames by remember { mutableStateOf(List(10) { "プレイヤー ${it + 1}" }) }
+    var isRnd by remember { mutableStateOf(false) }
+    var isIndiv by remember { mutableStateOf(false) }
+    var minT by remember { mutableIntStateOf(10) }
+    var maxT by remember { mutableIntStateOf(30) }
+    var manualT by remember { mutableIntStateOf(10) }
+    var hintT by remember { mutableIntStateOf(5) }
 
     var scores by remember { mutableStateOf(listOf<PlayerScore>()) }
     var currentPlayerIdx by remember { mutableIntStateOf(0) }
     var currentTargetTime by remember { mutableDoubleStateOf(10.0) }
     var selectedResultTab by remember { mutableIntStateOf(0) }
 
-    Scaffold(
-        bottomBar = { AdmobBanner(Modifier.background(MaterialTheme.colorScheme.surfaceVariant).padding(top = 2.dp)) },
-        containerColor = MaterialTheme.colorScheme.background
-    ) { padding ->
+    Scaffold(bottomBar = { AdmobBanner() }) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             when (currentScreen) {
                 "title" -> TitleScreen { currentScreen = "setup" }
-                "setup" -> SetupScreen(
-                    playerCount = playerCount,
-                    isLimitReleased = isLimitReleased,
-                    onPlayerCountChange = {
-                        playerCount = it
-                        val newCount = it.toInt()
-                        if (newCount > playerNames.size) {
-                            playerNames = playerNames + List(newCount - playerNames.size) { i -> "プレイヤー ${playerNames.size + i + 1}" }
-                        }
-                    },
-                    onReleaseLimit = { showRewardedAd { isLimitReleased = true } },
-                    onGoToSave = { currentScreen = "save_config" }
-                )
-                "save_config" -> SaveConfigScreen(
-                    playerNames = playerNames.take(playerCount.toInt()),
-                    onNameChange = { i, n -> val l = playerNames.toMutableList(); l[i] = n; playerNames = l },
-                    isRandomTime = isRandomTime, onRandomTimeChange = { isRandomTime = it },
-                    isIndividualRandom = isIndividualRandom, onIndividualRandomChange = { isIndividualRandom = it },
-                    randomRange = randomRange, onRandomRangeChange = { randomRange = it },
-                    manualTargetTime = manualTargetTime, onManualTargetTimeChange = { manualTargetTime = it },
-                    hintDuration = hintDuration, onHintDurationChange = { hintDuration = it },
+                "setup" -> SetupScreen(count = playerCount, isReleased = isLimitReleased, onCountChange = { playerCount = it }, onRelease = { showRewardedAd { isLimitReleased = true } }, onNext = { currentScreen = "config" })
+                "config" -> SaveConfigScreen(
+                    names = playerNames.take(playerCount),
+                    onNameChange = { i, n -> val u = playerNames.toMutableList(); u[i] = n; playerNames = u },
+                    isRnd = isRnd, onRndChange = { isRnd = it },
+                    isIndiv = isIndiv, onIndivChange = { isIndiv = it },
+                    minT = minT, onMinChange = { minT = it },
+                    maxT = maxT, onMaxChange = { maxT = it },
+                    manualT = manualT, onManualChange = { manualT = it },
+                    hintT = hintT, onHintChange = { hintT = it },
                     onBack = { currentScreen = "setup" },
-                    onStartGame = {
+                    onStart = {
                         scores = emptyList(); currentPlayerIdx = 0
-                        currentTargetTime = if (isRandomTime) (randomRange.start.toInt()..randomRange.endInclusive.toInt()).random().toDouble() else manualTargetTime.toDouble()
+                        // 最小 > 最大 の場合に入れ替えるロジック
+                        var finalMin = minT
+                        var finalMax = maxT
+                        if (isRnd && minT > maxT) {
+                            finalMin = maxT
+                            finalMax = minT
+                        }
+                        currentTargetTime = if (isRnd) (finalMin..finalMax).random().toDouble() else manualT.toDouble()
                         currentScreen = "ready"
                     }
                 )
                 "ready" -> ReadyScreen(playerNames[currentPlayerIdx], currentTargetTime) { currentScreen = "game" }
-                "game" -> GameScreen(playerNames[currentPlayerIdx], currentTargetTime, hintDuration) { actual ->
+                "game" -> GameScreen(playerNames[currentPlayerIdx], currentTargetTime, hintT.toFloat()) { actual ->
                     val newScores = scores + PlayerScore(playerNames[currentPlayerIdx], currentTargetTime, actual)
                     scores = newScores
-                    if (currentPlayerIdx < playerCount.toInt() - 1) {
+                    if (currentPlayerIdx < playerCount - 1) {
                         currentPlayerIdx++
-                        if (isRandomTime && isIndividualRandom) currentTargetTime = (randomRange.start.toInt()..randomRange.endInclusive.toInt()).random().toDouble()
+                        if (isRnd && isIndiv) {
+                            val finalMin = minOf(minT, maxT)
+                            val finalMax = maxOf(minT, maxT)
+                            currentTargetTime = (finalMin..finalMax).random().toDouble()
+                        }
                         currentScreen = "ready"
                     } else {
                         saveHistory(context, newScores.sortedBy { it.diff })
@@ -195,52 +181,206 @@ fun MainApp(showRewardedAd: (() -> Unit) -> Unit) {
                     }
                 }
                 "calculating" -> CalculatingScreen { currentScreen = "result_menu" }
-                "result_menu" -> ResultMenuScreen { selectedResultTab = it; currentScreen = "result" }
-                "result" -> ResultScreen(scores, selectedResultTab) { isLimitReleased = false; playerCount = 3f; currentScreen = "setup" }
+                "result_menu" -> ResultMenuScreen { tab -> selectedResultTab = tab; currentScreen = "result" }
+                "result" -> ResultScreen(scores, selectedResultTab) { isLimitReleased = false; playerCount = 3; currentScreen = "setup" }
             }
         }
     }
 }
+
+// ==========================================
+// 画面パーツ
+// ==========================================
 
 @Composable
 fun TitleScreen(onStart: () -> Unit) {
     val infiniteTransition = rememberInfiniteTransition(label = "blink")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f, targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(animation = tween(1200), repeatMode = RepeatMode.Reverse), label = "alpha"
-    )
+    val alpha by infiniteTransition.animateFloat(0.3f, 1.0f, infiniteRepeatable(tween(1200), RepeatMode.Reverse), label = "alpha")
     Box(modifier = Modifier.fillMaxSize().clickable { onStart() }) {
         Image(painter = painterResource(id = R.drawable.bg_start), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
-        Column(modifier = Modifier.fillMaxSize().padding(bottom = 60.dp), verticalArrangement = Arrangement.Bottom, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("TAP TO START", fontSize = 32.sp, color = Color.White, fontWeight = FontWeight.ExtraBold, modifier = Modifier.alpha(alpha), style = MaterialTheme.typography.headlineMedium.copy(shadow = androidx.compose.ui.graphics.Shadow(color = Color.Black, blurRadius = 15f)))
+        Text("TAP TO START", Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp).alpha(alpha), Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+fun SetupScreen(count: Int, isReleased: Boolean, onCountChange: (Int) -> Unit, onRelease: () -> Unit, onNext: () -> Unit) {
+    var showHistory by remember { mutableStateOf(false) }
+    if (showHistory) HistoryDialog(onDismiss = { showHistory = false }, history = getHistory(LocalContext.current))
+
+    Box(Modifier.fillMaxSize()) {
+        TextButton(onClick = { showHistory = true }, modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+            Icon(Icons.Filled.DateRange, null); Text("対戦履歴")
+        }
+        Column(Modifier.fillMaxSize().padding(24.dp), Arrangement.Center, Alignment.CenterHorizontally) {
+            Text("参加人数を選択", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(32.dp))
+            DropdownSelector("人数", count, if (isReleased) (1..10).toList() else (1..3).toList(), "人", onCountChange)
+            if (!isReleased) Button(onClick = onRelease, Modifier.padding(16.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))) { Text("動画広告を見て10人まで解放", color = Color.White) }
+            Button(onClick = onNext, Modifier.fillMaxWidth().height(64.dp).padding(top = 16.dp)) { Text("設定へ") }
         }
     }
 }
 
 @Composable
-fun SetupScreen(playerCount: Float, isLimitReleased: Boolean, onPlayerCountChange: (Float) -> Unit, onReleaseLimit: () -> Unit, onGoToSave: () -> Unit) {
-    var showHistory by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    if (showHistory) HistoryDialog(onDismiss = { showHistory = false }, history = getHistory(context))
-
-    Box(Modifier.fillMaxSize()) {
-        IconButton(onClick = { showHistory = true }, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
-            Icon(Icons.Filled.DateRange, contentDescription = "History", modifier = Modifier.size(28.dp))
-        }
-        Column(Modifier.fillMaxSize().padding(24.dp), Arrangement.Center, Alignment.CenterHorizontally) {
-            Text("参加人数を選択", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(48.dp))
-            val maxVal = if (isLimitReleased) 10f else 3f
-            Text("参加人数: ${playerCount.toInt()}人", fontSize = 20.sp)
-            Slider(value = playerCount, onValueChange = onPlayerCountChange, valueRange = 1f..maxVal, steps = if (maxVal > 1f) (maxVal - 2).toInt() else 0)
-            if (!isLimitReleased) Button(onClick = onReleaseLimit, Modifier.padding(vertical = 16.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63))) { Text("動画広告を見て10人まで解放") }
-            Spacer(Modifier.height(24.dp))
-            Button(onClick = onGoToSave, Modifier.fillMaxWidth().height(64.dp)) { Text("名前とルールの設定へ") }
-        }
-        Column(modifier = Modifier.fillMaxSize().padding(bottom = 20.dp), verticalArrangement = Arrangement.Bottom, horizontalAlignment = Alignment.CenterHorizontally) {
-            Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), modifier = Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://sites.google.com/view/komame-stopwatch-pp/"))) }) {
-                Text("プライバシーポリシー", fontSize = 11.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp))
+fun SaveConfigScreen(
+    names: List<String>, onNameChange: (Int, String) -> Unit,
+    isRnd: Boolean, onRndChange: (Boolean) -> Unit,
+    isIndiv: Boolean, onIndivChange: (Boolean) -> Unit,
+    minT: Int, onMinChange: (Int) -> Unit,
+    maxT: Int, onMaxChange: (Int) -> Unit,
+    manualT: Int, onManualChange: (Int) -> Unit,
+    hintT: Int, onHintChange: (Int) -> Unit,
+    onBack: () -> Unit, onStart: () -> Unit
+) {
+    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { Text("設定", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
+        itemsIndexed(names) { i, n -> OutlinedTextField(value = n, onValueChange = { onNameChange(i, it) }, label = { Text("プレイヤー ${i+1}") }, modifier = Modifier.fillMaxWidth(), singleLine = true) }
+        item {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("秒数をランダムにする", fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.weight(1f)); Switch(isRnd, onRndChange)
+                    }
+                    if (isRnd) {
+                        Spacer(Modifier.height(16.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            DropdownSelector("最小", minT, (10..60).toList(), "秒", onMinChange)
+                            DropdownSelector("最大", maxT, (10..60).toList(), "秒", onMaxChange)
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(!isIndiv, { onIndivChange(false) }); Text("全員共通")
+                            Spacer(Modifier.width(16.dp)); RadioButton(isIndiv, { onIndivChange(true) }); Text("バラバラ")
+                        }
+                    } else {
+                        Spacer(Modifier.height(8.dp))
+                        DropdownSelector("目標秒数", manualT, (10..60).toList(), "秒", onManualChange)
+                    }
+                }
             }
+        }
+        item {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                // 【修正】中央に配置するために fillMaxWidth と Alignment を設定
+                Column(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    DropdownSelector("ヒント表示時間", hintT, (0..10).toList(), "秒", onHintChange)
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+            Button(onClick = onStart, Modifier.fillMaxWidth().height(60.dp)) { Text("ゲーム開始！", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+            TextButton(onClick = onBack, Modifier.fillMaxWidth()) { Text("戻る") }
+        }
+    }
+}
+
+@Composable
+fun GameScreen(name: String, target: Double, hintT: Float, onStop: (Double) -> Unit) {
+    var elapsed by remember { mutableDoubleStateOf(0.0) }
+    var isRunning by remember { mutableStateOf(false) }
+    var start by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(isRunning) { if (isRunning) { start = System.currentTimeMillis(); while (isRunning) { elapsed = (System.currentTimeMillis() - start) / 1000.0; delay(10) } } }
+    Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
+        Text(name, fontSize = 24.sp); Text("目標: ${"%.0f".format(target)}秒", fontSize = 48.sp, fontWeight = FontWeight.Bold)
+        val displayTime = if (!isRunning && elapsed == 0.0) "0.00" else if (isRunning && elapsed <= hintT.toDouble()) "%.2f".format(elapsed) else "??.??"
+        Text(displayTime, fontSize = 100.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), color = if (displayTime == "??.??") Color.Gray else MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(60.dp))
+        Button(onClick = { if (!isRunning) isRunning = true else onStop(elapsed) }, Modifier.size(220.dp), colors = ButtonDefaults.buttonColors(containerColor = if (isRunning) Color.Red else Color.Green)) { Text(if (isRunning) "STOP" else "START", fontSize = 32.sp) }
+    }
+}
+
+@Composable
+fun DropdownSelector(label: String, current: Int, options: List<Int>, suffix: String, onSelect: (Int) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+        Box(modifier = Modifier.padding(top = 4.dp)) {
+            OutlinedButton(onClick = { expanded = true }, modifier = Modifier.width(150.dp)) {
+                Text("$current$suffix"); Icon(Icons.Default.ArrowDropDown, null)
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { option -> DropdownMenuItem(text = { Text("$option$suffix") }, onClick = { onSelect(option); expanded = false }) }
+            }
+        }
+    }
+}
+
+@Composable
+fun ReadyScreen(name: String, target: Double, onStart: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(24.dp), Arrangement.Center, Alignment.CenterHorizontally) {
+        Text("次は $name さん", fontSize = 24.sp); Text("${"%.0f".format(target)}秒", fontSize = 72.sp, fontWeight = FontWeight.ExtraBold)
+        Spacer(Modifier.height(48.dp)); Button(onClick = onStart, Modifier.size(220.dp)) { Text("OK", fontSize = 32.sp) }
+    }
+}
+
+@Composable
+fun CalculatingScreen(onFinished: () -> Unit) {
+    LaunchedEffect(Unit) { delay(2000); onFinished() }
+    Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) { CircularProgressIndicator(); Spacer(Modifier.height(24.dp)); Text("集計中...") }
+}
+
+@Composable
+fun ResultMenuScreen(onSelect: (Int) -> Unit) {
+    Column(Modifier.fillMaxSize().padding(24.dp), Arrangement.Center, Alignment.CenterHorizontally) {
+        Text("✨ 結果発表 ✨", fontSize = 32.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(48.dp))
+        Button(onClick = { onSelect(0) }, modifier = Modifier.fillMaxWidth().height(80.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD700))) { Text("🏆 1位を発表！", fontSize = 20.sp, color = Color.Black) }
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = { onSelect(1) }, modifier = Modifier.fillMaxWidth().height(80.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFCDD2))) { Text("💀 最下位を発表...", fontSize = 20.sp, color = Color.Red) }
+        Spacer(Modifier.height(16.dp))
+        OutlinedButton(onClick = { onSelect(2) }, modifier = Modifier.fillMaxWidth().height(60.dp)) { Text("📊 全員の順位を確認", fontSize = 18.sp) }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ResultScreen(scores: List<PlayerScore>, initialTab: Int, onRestart: () -> Unit) {
+    var selectedTab by remember { mutableIntStateOf(initialTab) }
+    val sorted = scores.sortedBy { it.diff }
+    Column(Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.weight(1f).padding(horizontal = 16.dp)) {
+            when (selectedTab) {
+                0 -> Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
+                    Text("👑 優勝 👑", fontSize = 28.sp, color = Color(0xFFD4AF37), fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(16.dp))
+                    Text(sorted.first().name, fontSize = 48.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(16.dp))
+                    ResultCard(1, sorted.first(), isSpecial = true)
+                }
+                1 -> Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
+                    Text("😱 ドベ 😱", fontSize = 28.sp, color = Color.Red, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(16.dp))
+                    Text(sorted.last().name, fontSize = 48.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(16.dp))
+                    ResultCard(scores.size, sorted.last(), isSpecial = true)
+                }
+                2 -> LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item { Text("📊 全員の順位", Modifier.padding(vertical = 16.dp), fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+                    itemsIndexed(sorted) { i, s -> ResultCard(i + 1, s) }
+                }
+            }
+        }
+        SecondaryTabRow(selectedTabIndex = selectedTab) {
+            listOf("🏆 1位", "💀 最下位", "📊 全員").forEachIndexed { i, t -> Tab(selected = selectedTab == i, onClick = { selectedTab = i }, text = { Text(t) }) }
+        }
+        Button(onClick = onRestart, modifier = Modifier.fillMaxWidth().padding(16.dp).height(56.dp)) { Text("トップに戻る") }
+    }
+}
+
+@Composable
+fun ResultCard(rank: Int, score: PlayerScore, isSpecial: Boolean = false) {
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), colors = CardDefaults.cardColors(containerColor = if (isSpecial) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant)) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("${rank}位", fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(70.dp))
+            Column(Modifier.weight(1f)) {
+                if (!isSpecial) Text(score.name, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("目標: ${"%.1f".format(score.targetTime)}s / 計測: ${"%.2f".format(score.actualTime)}s", fontSize = 14.sp)
+            }
+            Text("${"%.2f".format(score.diff)}s差", fontSize = 20.sp, fontWeight = FontWeight.Black, color = Color.Red)
         }
     }
 }
@@ -248,24 +388,26 @@ fun SetupScreen(playerCount: Float, isLimitReleased: Boolean, onPlayerCountChang
 @Composable
 fun HistoryDialog(onDismiss: () -> Unit, history: List<GameHistory>) {
     Dialog(onDismissRequest = onDismiss) {
-        Card(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f)) {
+        Card(modifier = Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
             Column(Modifier.padding(16.dp)) {
-                Text("📊 直近5試合の結果", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text("📊 履歴 (直近5試合)", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(16.dp))
                 if (history.isEmpty()) {
-                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("まだ履歴がありません") }
+                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("履歴なし") }
                 } else {
                     LazyColumn(Modifier.weight(1f)) {
                         itemsIndexed(history) { _, game ->
-                            Column(Modifier.padding(vertical = 8.dp)) {
-                                Text("📅 ${game.date}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                                game.results.forEachIndexed { index, player ->
-                                    Row(Modifier.fillMaxWidth().padding(start = 8.dp, top = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text("${index + 1}位: ${player.first}", fontSize = 14.sp)
-                                        Text("${"%.2f".format(player.second)}s差", fontSize = 14.sp)
+                            Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Text("📅 ${game.date}", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                    game.results.forEachIndexed { i, p ->
+                                        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
+                                            Text("${i + 1}位: ${p.name}", fontSize = 14.sp)
+                                            Text("${"%.2f".format(p.diff)}s差", color = Color.Red, fontSize = 14.sp)
+                                        }
+                                        Text(" (目標: ${"%.1f".format(p.target)}s / 計測: ${"%.2f".format(p.actual)}s)", fontSize = 11.sp, color = Color.Gray)
                                     }
                                 }
-                                HorizontalDivider(Modifier.padding(top = 8.dp), thickness = 0.5.dp)
                             }
                         }
                     }
@@ -277,147 +419,8 @@ fun HistoryDialog(onDismiss: () -> Unit, history: List<GameHistory>) {
 }
 
 @Composable
-fun SaveConfigScreen(playerNames: List<String>, onNameChange: (Int, String) -> Unit, isRandomTime: Boolean, onRandomTimeChange: (Boolean) -> Unit, isIndividualRandom: Boolean, onIndividualRandomChange: (Boolean) -> Unit, randomRange: ClosedFloatingPointRange<Float>, onRandomRangeChange: (ClosedFloatingPointRange<Float>) -> Unit, manualTargetTime: Float, onManualTargetTimeChange: (Float) -> Unit, hintDuration: Float, onHintDurationChange: (Float) -> Unit, onBack: () -> Unit, onStartGame: () -> Unit) {
-    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Text("ルール設定", fontSize = 22.sp, fontWeight = FontWeight.Bold) }
-        itemsIndexed(playerNames) { i, n -> OutlinedTextField(value = n, onValueChange = { onNameChange(i, it) }, label = { Text("プレイヤー ${i+1}") }, modifier = Modifier.fillMaxWidth(), singleLine = true) }
-        item {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) { Text("秒数をランダムにする"); Spacer(Modifier.weight(1f)); Switch(isRandomTime, onRandomTimeChange) }
-                    if (isRandomTime) {
-                        Text("範囲：${randomRange.start.toInt()}〜${randomRange.endInclusive.toInt()}秒")
-                        RangeSlider(value = randomRange, onValueChange = { onRandomRangeChange(round(it.start)..round(it.endInclusive)) }, valueRange = 10f..60f, steps = 49)
-                        Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(!isIndividualRandom, { onIndividualRandomChange(false) }); Text("全員共通"); Spacer(Modifier.width(8.dp)); RadioButton(isIndividualRandom, { onIndividualRandomChange(true) }); Text("バラバラ") }
-                    } else {
-                        Text("目標：${manualTargetTime.toInt()}秒")
-                        Slider(value = manualTargetTime, onValueChange = { onManualTargetTimeChange(round(it)) }, valueRange = 10f..60f, steps = 49)
-                    }
-                }
-            }
-        }
-        item {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("ヒント表示時間: ${hintDuration.toInt()}秒", fontWeight = FontWeight.Bold)
-                    Slider(value = hintDuration, onValueChange = { onHintDurationChange(round(it)) }, valueRange = 0f..10f, steps = 9)
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            Button(onClick = onStartGame, Modifier.fillMaxWidth().height(60.dp)) { Text("この設定でゲーム開始！") }
-            TextButton(onClick = onBack, Modifier.fillMaxWidth()) { Text("人数設定に戻る") }
-        }
-    }
-}
-
-@Composable
-fun ReadyScreen(name: String, target: Double, onStart: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(24.dp), Arrangement.Center, Alignment.CenterHorizontally) {
-        Text("次は $name さんの番", fontSize = 24.sp)
-        Text("${"%.0f".format(target)}秒", fontSize = 72.sp, fontWeight = FontWeight.ExtraBold)
-        Spacer(Modifier.height(48.dp))
-        Button(onClick = onStart, Modifier.size(220.dp)) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Text("準備OK!", fontSize = 32.sp); Text("※スタートではありません", fontSize = 12.sp) } }
-    }
-}
-
-@Composable
-fun GameScreen(name: String, target: Double, hintDuration: Float, onStop: (Double) -> Unit) {
-    var elapsed by remember { mutableDoubleStateOf(0.0) }
-    var isRunning by remember { mutableStateOf(false) }
-    var start by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(isRunning) { if (isRunning) { start = System.currentTimeMillis(); while (isRunning) { elapsed = (System.currentTimeMillis() - start) / 1000.0; delay(10) } } }
-    Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
-        Text(name, fontSize = 24.sp); Text("目標: ${"%.0f".format(target)}秒", fontSize = 48.sp, fontWeight = FontWeight.Bold)
-        val show = isRunning && elapsed <= hintDuration.toDouble()
-        Text(if (show) "%.2f".format(elapsed) else "??.??", fontSize = 100.sp, color = if (show) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
-        Spacer(Modifier.height(60.dp))
-        Button(onClick = { if (!isRunning) isRunning = true else onStop(elapsed) }, Modifier.size(200.dp), colors = ButtonDefaults.buttonColors(containerColor = if (isRunning) Color.Red else Color.Green)) { Text(if (isRunning) "STOP" else "START", fontSize = 32.sp, color = Color.White) }
-    }
-}
-
-@Composable
-fun CalculatingScreen(onFinished: () -> Unit) {
-    LaunchedEffect(Unit) { delay(2000); onFinished() }
-    Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) { CircularProgressIndicator(modifier = Modifier.size(64.dp)); Spacer(Modifier.height(24.dp)); Text("結果を集計中...", fontSize = 20.sp) }
-}
-
-@Composable
-fun ResultMenuScreen(onSelect: (Int) -> Unit) {
-    Column(Modifier.fillMaxSize().padding(24.dp), Arrangement.Center, Alignment.CenterHorizontally) {
-        Text("✨ 結果発表 ✨", fontSize = 32.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(48.dp))
-        Button(onClick = { onSelect(0) }, modifier = Modifier.fillMaxWidth().height(80.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD700))) { Text("🏆 1位（優勝）を発表！", fontSize = 20.sp, color = Color.Black) }
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = { onSelect(1) }, modifier = Modifier.fillMaxWidth().height(80.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFCDD2))) { Text("💀 最下位（ドベ）を発表...", fontSize = 20.sp, color = Color.Red) }
-        Spacer(Modifier.height(16.dp))
-        OutlinedButton(onClick = { onSelect(2) }, modifier = Modifier.fillMaxWidth().height(60.dp)) { Text("📊 全員の順位を確認", fontSize = 18.sp) }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class) // 新しいTabRowを使うために必要です
-@Composable
-fun ResultScreen(scores: List<PlayerScore>, initialTab: Int, onRestart: () -> Unit) {
-    var selectedTab by remember { mutableIntStateOf(initialTab) }
-    val sorted = scores.sortedBy { it.diff }
-
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        // 以前の TabRow を SecondaryTabRow に差し替え
-        Surface(shadowElevation = 2.dp) {
-            SecondaryTabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary,
-                divider = {} // デフォルトの区切り線を表示
-            ) {
-                val tabs = listOf("🏆 1位", "💀 最下位", "📊 全員")
-                tabs.forEachIndexed { i, title ->
-                    Tab(
-                        selected = selectedTab == i,
-                        onClick = { selectedTab = i },
-                        text = { Text(text = title, style = MaterialTheme.typography.titleSmall) }
-                    )
-                }
-            }
-        }
-
-        Box(modifier = Modifier.weight(1f).padding(horizontal = 16.dp)) {
-            when (selectedTab) {
-                0 -> Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
-                    Text("👑 優勝 👑", fontSize = 36.sp, color = Color(0xFFD4AF37), fontWeight = FontWeight.Black)
-                    Spacer(Modifier.height(16.dp))
-                    ResultCard(1, sorted.first(), isSpecial = true)
-                }
-                1 -> Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
-                    Text("😱 ドベ 😱", fontSize = 36.sp, color = Color.Red, fontWeight = FontWeight.Black)
-                    Spacer(Modifier.height(16.dp))
-                    ResultCard(scores.size, sorted.last(), isSpecial = true)
-                }
-                2 -> LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    itemsIndexed(sorted) { i, s -> ResultCard(i + 1, s) }
-                }
-            }
-        }
-        Button(
-            onClick = onRestart,
-            modifier = Modifier.fillMaxWidth().padding(16.dp).height(56.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-        ) {
-            Text("タイトルへ戻る", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-fun ResultCard(rank: Int, score: PlayerScore, isSpecial: Boolean = false) {
-    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = if (isSpecial) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant), elevation = CardDefaults.cardElevation(if (isSpecial) 8.dp else 2.dp), border = if (isSpecial) BorderStroke(2.dp, Color(0xFFFFD700)) else null) {
-        Row(Modifier.padding(if (isSpecial) 24.dp else 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text("${rank}位: ${score.name}", fontWeight = FontWeight.Black, fontSize = if (isSpecial) 24.sp else 18.sp); Text("目標: ${"%.0f".format(score.targetTime)}s / 実測: ${"%.2f".format(score.actualTime)}s", fontSize = 14.sp) }
-            Text("${"%.2f".format(score.diff)}s差", fontWeight = FontWeight.Bold, color = if (score.diff < 0.5) Color(0xFF4CAF50) else Color.Red, fontSize = if (isSpecial) 22.sp else 16.sp)
-        }
-    }
-}
-
-@Composable
-fun AdmobBanner(modifier: Modifier = Modifier) {
-    AndroidView(modifier = modifier.fillMaxWidth().height(50.dp), factory = { context -> AdView(context).apply { setAdSize(AdSize.BANNER); adUnitId = "ca-app-pub-3940256099942544/6300978111"; loadAd(AdRequest.Builder().build()) } })
+fun AdmobBanner() {
+    AndroidView(modifier = Modifier.fillMaxWidth().height(50.dp), factory = { context ->
+        AdView(context).apply { setAdSize(AdSize.BANNER); adUnitId = "ca-app-pub-3940256099942544/6300978111"; loadAd(AdRequest.Builder().build()) }
+    })
 }

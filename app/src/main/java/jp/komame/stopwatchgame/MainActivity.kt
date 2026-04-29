@@ -37,6 +37,13 @@ import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
+import com.google.android.gms.ads.interstitial.InterstitialAd
+import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
+
+
+// ★広告制御用
+private var playCount = 0
+private var lastWasAd = false
 
 // ==========================================
 // データモデル
@@ -49,6 +56,7 @@ data class HistoryDetail(val name: String, val target: Double, val actual: Doubl
 
 class MainActivity : ComponentActivity() {
     private var rewardedAd: RewardedAd? = null
+    private var interstitialAd: InterstitialAd? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,12 +66,16 @@ class MainActivity : ComponentActivity() {
 
         MobileAds.initialize(this) {}
         loadRewardedAd()
+        loadInterstitialAd()
 
         setContent {
             val darkTheme = androidx.compose.foundation.isSystemInDarkTheme()
             MaterialTheme(colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    MainApp(showRewardedAd = { onAdWatched -> showRewardedAdLogic(onAdWatched) })
+                    MainApp(
+                        showRewardedAd = { onAdWatched -> showRewardedAdLogic(onAdWatched)},
+                        showInterstitial = { onNext -> showInterstitialIfNeeded(onNext) }
+                    )
                 }
             }
         }
@@ -81,6 +93,61 @@ class MainActivity : ComponentActivity() {
         rewardedAd?.let { ad -> ad.show(this) { onAdWatched(); loadRewardedAd() } } ?: run {
             Toast.makeText(this, "広告準備中...", Toast.LENGTH_SHORT).show()
             loadRewardedAd()
+        }
+    }
+
+    private fun loadInterstitialAd() {
+        val adRequest = AdRequest.Builder().build()
+        InterstitialAd.load(
+            this,
+            "ca-app-pub-3940256099942544/1033173712", // テストID
+            adRequest,
+            object : InterstitialAdLoadCallback() {
+                override fun onAdLoaded(ad: InterstitialAd) {
+                    interstitialAd = ad
+                }
+
+                override fun onAdFailedToLoad(adError: LoadAdError) {
+                    interstitialAd = null
+                }
+            }
+        )
+    }
+
+    private fun shouldShowAd(): Boolean {
+        playCount++
+
+        if (playCount % 2 == 0 && !lastWasAd) {
+            lastWasAd = true
+            return true
+        }
+
+        if (playCount % 2 != 0) {
+            lastWasAd = false
+        }
+
+        return false
+
+    }
+
+    private fun showInterstitialIfNeeded(onNext: () -> Unit) {
+        if (shouldShowAd() && interstitialAd != null) {
+
+            interstitialAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
+                override fun onAdDismissedFullScreenContent() {
+                    interstitialAd = null
+                    loadInterstitialAd()
+                    onNext()
+                }
+            }
+
+            interstitialAd?.show(this)
+
+        } else {
+            if (interstitialAd == null) {
+                loadInterstitialAd()
+            }
+            onNext()
         }
     }
 }
@@ -116,7 +183,11 @@ fun getHistory(context: Context): List<GameHistory> {
 // アプリ本体
 // ==========================================
 @Composable
-fun MainApp(showRewardedAd: (() -> Unit) -> Unit) {
+fun MainApp(
+    showRewardedAd: (() -> Unit) -> Unit,
+    showInterstitial: ((() -> Unit)) -> Unit
+    )
+{
     val context = LocalContext.current
     var currentScreen by remember { mutableStateOf("title") }
     var isLimitReleased by remember { mutableStateOf(false) }
@@ -140,29 +211,39 @@ fun MainApp(showRewardedAd: (() -> Unit) -> Unit) {
             when (currentScreen) {
                 "title" -> TitleScreen { currentScreen = "setup" }
                 "setup" -> SetupScreen(count = playerCount, isReleased = isLimitReleased, onCountChange = { playerCount = it }, onRelease = { showRewardedAd { isLimitReleased = true } }, onNext = { currentScreen = "config" })
-                "config" -> SaveConfigScreen(
-                    names = playerNames.take(playerCount),
-                    onNameChange = { i, n -> val u = playerNames.toMutableList(); u[i] = n; playerNames = u },
-                    isRnd = isRnd, onRndChange = { isRnd = it },
-                    isIndiv = isIndiv, onIndivChange = { isIndiv = it },
-                    minT = minT, onMinChange = { minT = it },
-                    maxT = maxT, onMaxChange = { maxT = it },
-                    manualT = manualT, onManualChange = { manualT = it },
-                    hintT = hintT, onHintChange = { hintT = it },
-                    onBack = { currentScreen = "setup" },
-                    onStart = {
-                        scores = emptyList(); currentPlayerIdx = 0
-                        // 最小 > 最大 の場合に入れ替えるロジック
-                        var finalMin = minT
-                        var finalMax = maxT
-                        if (isRnd && minT > maxT) {
-                            finalMin = maxT
-                            finalMax = minT
-                        }
-                        currentTargetTime = if (isRnd) (finalMin..finalMax).random().toDouble() else manualT.toDouble()
-                        currentScreen = "ready"
+                "config" -> {
+                    if (isRnd && minT > maxT) {
+                        val tmpMin = minT
+                        minT = maxT
+                        maxT = tmpMin
                     }
-                )
+
+                    SaveConfigScreen(
+                        names = playerNames.take(playerCount),
+                        onNameChange = { i, n -> val u = playerNames.toMutableList(); u[i] = n; playerNames = u },
+                        isRnd = isRnd, onRndChange = { isRnd = it },
+                        isIndiv = isIndiv, onIndivChange = { isIndiv = it },
+                        minT = minT, onMinChange = { minT = it },
+                        maxT = maxT, onMaxChange = { maxT = it },
+                        manualT = manualT, onManualChange = { manualT = it },
+                        hintT = hintT, onHintChange = { hintT = it },
+                        onBack = { currentScreen = "setup" },
+                        onStart = {
+                            scores = emptyList()
+                            currentPlayerIdx = 0
+
+                            val finalMin = minOf(minT, maxT)
+                            val finalMax = maxOf(minT, maxT)
+
+                            currentTargetTime =
+                                if (isRnd) (finalMin..finalMax).random().toDouble()
+                                else manualT.toDouble()
+
+                            currentScreen = "ready"
+                        }
+                    )
+                } // ← ★これが必要
+
                 "ready" -> ReadyScreen(playerNames[currentPlayerIdx], currentTargetTime) { currentScreen = "game" }
                 "game" -> GameScreen(playerNames[currentPlayerIdx], currentTargetTime, hintT.toFloat()) { actual ->
                     val newScores = scores + PlayerScore(playerNames[currentPlayerIdx], currentTargetTime, actual)
@@ -181,7 +262,12 @@ fun MainApp(showRewardedAd: (() -> Unit) -> Unit) {
                     }
                 }
                 "calculating" -> CalculatingScreen { currentScreen = "result_menu" }
-                "result_menu" -> ResultMenuScreen { tab -> selectedResultTab = tab; currentScreen = "result" }
+                "result_menu" -> ResultMenuScreen { tab ->
+                    showInterstitial {
+                        selectedResultTab = tab
+                        currentScreen = "result"
+                    }
+                }
                 "result" -> ResultScreen(scores, selectedResultTab) { isLimitReleased = false; playerCount = 3; currentScreen = "setup" }
             }
         }

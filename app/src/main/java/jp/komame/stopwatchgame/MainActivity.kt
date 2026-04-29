@@ -359,7 +359,8 @@ fun SaveConfigScreen(
             }
             Spacer(Modifier.height(24.dp))
             Button(onClick = onStart, Modifier.fillMaxWidth().height(60.dp)) { Text("ゲーム開始！", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
-            TextButton(onClick = onBack, Modifier.fillMaxWidth()) { Text("戻る") }
+            //TextButton(onClick = onBack, Modifier.fillMaxWidth()) { Text("戻る") }
+            Button(onClick = onBack, Modifier.fillMaxWidth().padding(16.dp).height(40.dp)) { Text("戻る") }
         }
     }
 }
@@ -380,16 +381,24 @@ fun GameScreen(name: String, target: Double, hintT: Float, onStop: (Double) -> U
 }
 
 @Composable
-fun DropdownSelector(label: String, current: Int, options: List<Int>, suffix: String, onSelect: (Int) -> Unit) {
+fun DropdownSelector(
+    label: String,
+    current: Int,
+    options: List<Int>,
+    suffix: String,
+    onSelect: (Int) -> Unit,
+    labelSize: Int = 14,
+    valueSize: Int = 16
+) {
     var expanded by remember { mutableStateOf(false) }
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+        Text(label, fontSize = labelSize.sp, color = MaterialTheme.colorScheme.primary)
         Box(modifier = Modifier.padding(top = 4.dp)) {
             OutlinedButton(onClick = { expanded = true }, modifier = Modifier.width(150.dp)) {
-                Text("$current$suffix"); Icon(Icons.Default.ArrowDropDown, null)
+                Text("$current$suffix",fontSize = valueSize.sp); Icon(Icons.Default.ArrowDropDown, null)
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                options.forEach { option -> DropdownMenuItem(text = { Text("$option$suffix") }, onClick = { onSelect(option); expanded = false }) }
+                options.forEach { option -> DropdownMenuItem(text = { Text("$option$suffix", fontSize = valueSize.sp) }, onClick = { onSelect(option); expanded = false }) }
             }
         }
     }

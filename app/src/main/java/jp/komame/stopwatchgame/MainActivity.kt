@@ -83,7 +83,7 @@ class MainActivity : ComponentActivity() {
 
     private fun loadRewardedAd() {
         val adRequest = AdRequest.Builder().build()
-        RewardedAd.load(this, "ca-app-pub-3940256099942544/5224354917", adRequest, object : RewardedAdLoadCallback() {
+        RewardedAd.load(this, "ca-app-pub-8502216838632386/6433310938", adRequest, object : RewardedAdLoadCallback() {
             override fun onAdFailedToLoad(adError: LoadAdError) { rewardedAd = null }
             override fun onAdLoaded(ad: RewardedAd) { rewardedAd = ad }
         })
@@ -100,7 +100,7 @@ class MainActivity : ComponentActivity() {
         val adRequest = AdRequest.Builder().build()
         InterstitialAd.load(
             this,
-            "ca-app-pub-3940256099942544/1033173712", // テストID
+            "ca-app-pub-8502216838632386/2190950615", // テストID
             adRequest,
             object : InterstitialAdLoadCallback() {
                 override fun onAdLoaded(ad: InterstitialAd) {
@@ -516,6 +516,6 @@ fun HistoryDialog(onDismiss: () -> Unit, history: List<GameHistory>) {
 @Composable
 fun AdmobBanner() {
     AndroidView(modifier = Modifier.fillMaxWidth().height(50.dp), factory = { context ->
-        AdView(context).apply { setAdSize(AdSize.BANNER); adUnitId = "ca-app-pub-3940256099942544/6300978111"; loadAd(AdRequest.Builder().build()) }
+        AdView(context).apply { setAdSize(AdSize.BANNER); adUnitId = "ca-app-pub-8502216838632386/5058137205"; loadAd(AdRequest.Builder().build()) }
     })
 }
